@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Event Management System</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f4; }
+        header { text-align: center; margin-bottom: 20px; }
+        .role-toggle { margin-bottom: 20px; }
+        .role-toggle button { padding: 10px 20px; margin: 0 10px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; }
+        .role-toggle button:hover { background-color: #0056b3; }
+        .admin-panel, .student-panel { display: none; }
+        .active { display: block; }
+        form { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        input, select, textarea, button { display: block; width: 100%; margin-bottom: 10px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #28a745; color: white; cursor: pointer; }
+        button:hover { background-color: #218838; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        .event-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .event-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .event-card h3 { margin-top: 0; }
+        .event-card button { margin-top: 10px; width: auto; display: inline-block; margin-right: 10px; }
+        .filters { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .filters select, .filters button { width: auto; display: inline-block; margin-right: 10px; }
+        .analytics { background: white; padding: 20px; border-radius: 8px; margin-top: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .qr-code { margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Campus Event Management System</h1>
+        <div class="role-toggle">
+            <button id="admin-btn">Admin View</button>
+            <button id="student-btn">Student View</button>
+        </div>
+    </header>
+
+    <div id="admin-panel" class="admin-panel">
+        <h2>Admin Panel</h2>
+        <form id="event-form">
+            <input type="text" id="title" placeholder="Event Title" required>
+            <select id="category">
+                <option value="Technical">Technical</option>
+                <option value="Cultural">Cultural</option>
+                <option value="Sports">Sports</option>
+                <option value="Other">Other</option>
+            </select>
+            <input type="date" id="date" required>
+            <input type="time" id="time" required>
+            <input type="text" id="venue" placeholder="Venue" required>
+            <textarea id="description" placeholder="Description" required></textarea>
+            <input type="number" id="limit" placeholder="Registration Limit" min="1">
+            <button type="submit">Create Event</button>
+        </form>
+        <script>
+document.getElementById("event-form").addEventListener("submit", async (e) => {
+    e.preventDefault(); // prevent page reload
+
+    const eventData = {
+        title: document.getElementById("title").value,
+        category: document.getElementById("category").value,
+        date: document.getElementById("date").value,
+        time: document.getElementById("time").value,
+        venue: document.getElementById("venue").value,
+        description: document.getElementById("description").value,
+        registration_limit: document.getElementById("limit").value
+    };
+
+    try {
+        const response = await fetch("http://localhost:3000/api/events", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(eventData)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert("Event created successfully!");
+            document.getElementById("event-form").reset();
+        } else {
+            alert("Error: " + result.error);
+        }
+
+    } catch (err) {
+        console.error("Request failed:", err);
+        alert("Failed to connect to the server.");
+    }
+});
+</script>
+
+        <h3>Manage Events</h3>
+        <div id="admin-event-list" class="event-list"></div>
+        <div class="analytics">
+            <h4>Event Popularity Analytics</h4>
+            <div id="analytics-data"></div>
+        </div>
+    </div>
+
+    <div id="student-panel" class="student-panel">
+        <h2>Student Panel</h2>
+        <div class="filters">
+            <label for="filter-category">Category:</label>
+            <select id="filter-category">
+                <option value="">All Categories</option>
+                <option value="Technical">Technical</option>
+                <option value="Cultural">Cultural</option>
+                <option value="Sports">Sports</option>
+                <option value="Other">Other</option>
+            </select>
+
+            <label for="filter-status">Status:</label>
+            <select id="filter-status">
+                <option value="upcoming">Upcoming</option>
+                <option value="past">Past</option>
+            </select>
+
+            <button id="apply-filters">Apply Filters</button>
+        </div>
+
+        <div id="student-event-list" class="event-list"></div>
+    </div>
+
+    <!-- QR Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <script>
+        let events = JSON.parse(localStorage.getItem('events')) || [];
+        let registrations = JSON.parse(localStorage.getItem('registrations')) || {};
+
+        document.getElementById('admin-btn').addEventListener('click', () => {
+            document.getElementById('admin-panel').classList.add('active');
+            document.getElementById('student-panel').classList.remove('active');
+            renderAdminEvents();
+            renderAnalytics();
+        });
+
+        document.getElementById('student-btn').addEventListener('click', () => {
+            document.getElementById('student-panel').classList.add('active');
+            document.getElementById('admin-panel').classList.remove('active');
+            renderStudentEvents();
+        });
+
+
+        // CREATE EVENT
+        document.getElementById('event-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const event = {
+                id: Date.now(),
+                title: document.getElementById('title').value,
+                category: document.getElementById('category').value,
+                date: document.getElementById('date').value,
+                time: document.getElementById('time').value,
+                venue: document.getElementById('venue').value,
+                description: document.getElementById('description').value,
+                limit: parseInt(document.getElementById('limit').value) || Infinity,
+                views: 0
+            };
+            events.push(event);
+            localStorage.setItem('events', JSON.stringify(events));
+            renderAdminEvents();
+            e.target.reset();
+        });
+
+        // ADMIN EVENT LIST
+        function renderAdminEvents() {
+            const list = document.getElementById('admin-event-list');
+            list.innerHTML = '';
+            events.forEach(event => {
+                const card = document.createElement('div');
+                card.className = 'event-card';
+                card.innerHTML = `
+                    <h3>${event.title}</h3>
+                    <p><strong>Category:</strong> ${event.category}</p>
+                    <p><strong>Date:</strong> ${event.date} at ${event.time}</p>
+                    <p><strong>Venue:</strong> ${event.venue}</p>
+                    <p><strong>Description:</strong> ${event.description}</p>
+                    <p><strong>Limit:</strong> ${event.limit === Infinity ? 'Unlimited' : event.limit}</p>
+                    <p><strong>Registrations:</strong> ${registrations[event.id] ? registrations[event.id].length : 0}</p>
+                    <button onclick="editEvent(${event.id})">Edit</button>
+                    <button onclick="deleteEvent(${event.id})">Delete</button>
+                    <button onclick="downloadParticipants(${event.id})">Download Participants</button>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        function editEvent(id) {
+            const event = events.find(e => e.id === id);
+            if (event) {
+                document.getElementById('title').value = event.title;
+                document.getElementById('category').value = event.category;
+                document.getElementById('date').value = event.date;
+                document.getElementById('time').value = event.time;
+                document.getElementById('venue').value = event.venue;
+                document.getElementById('description').value = event.description;
+                document.getElementById('limit').value = event.limit;
+                deleteEvent(id);
+            }
+        }
+
+        function deleteEvent(id) {
+            events = events.filter(e => e.id !== id);
+            delete registrations[id];
+            localStorage.setItem('events', JSON.stringify(events));
+            localStorage.setItem('registrations', JSON.stringify(registrations));
+            renderAdminEvents();
+        }
+
+        function downloadParticipants(eventId) {
+            const participants = registrations[eventId] || [];
+            let csv = 'Name,Email\n';
+            participants.forEach(p => csv += `${p.name},${p.email}\n`);
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'participants.csv';
+            a.click();
+        }
+
+        function renderAnalytics() {
+            const data = document.getElementById('analytics-data');
+            data.innerHTML = '';
+            events.forEach(event => {
+                const regs = registrations[event.id] ? registrations[event.id].length : 0;
+                data.innerHTML += `<p><strong>${event.title}:</strong> Views - ${event.views}, Registrations - ${regs}</p>`;
+            });
+        }
+
+        // STUDENT VIEW
+        function renderStudentEvents() {
+            const list = document.getElementById('student-event-list');
+            const category = document.getElementById('filter-category').value;
+            const status = document.getElementById('filter-status').value;
+            const now = new Date();
+
+            list.innerHTML = '';
+
+            events.filter(event => {
+                if (category && event.category !== category) return false;
+
+                const eventDate = new Date(`${event.date}T${event.time}`);
+                if (status === 'upcoming' && eventDate < now) return false;
+                if (status === 'past' && eventDate >= now) return false;
+
+                return true;
+            }).forEach(event => {
+                event.views++;
+                localStorage.setItem('events', JSON.stringify(events));
+
+                const card = document.createElement('div');
+                card.className = 'event-card';
+
+                const regs = registrations[event.id] ? registrations[event.id].length : 0;
+                const limitReached = regs >= event.limit;
+
+                card.innerHTML = `
+                    <h3>${event.title}</h3>
+                    <p><strong>Category:</strong> ${event.category}</p>
+                    <p><strong>Date:</strong> ${event.date} at ${event.time}</p>
+                    <p><strong>Venue:</strong> ${event.venue}</p>
+                    <p><strong>Description:</strong> ${event.description}</p>
+                    <p><strong>Registrations:</strong> ${regs}/${event.limit === Infinity ? '∞' : event.limit}</p>
+
+                    <button onclick="register(${event.id})" ${limitReached ? 'disabled' : ''}>
+                        Register
+                    </button>
+
+                    <button onclick="generateQR(${event.id})">Generate QR</button>
+
+                    <div id="qr-${event.id}" class="qr-code"></div>
+                `;
+
+                list.appendChild(card);
+            });
+        }
+
+        function register(eventId) {
+            const name = prompt('Enter your name:');
+            const email = prompt('Enter your email:');
+            if (name && email) {
+                if (!registrations[eventId]) registrations[eventId] = [];
+                registrations[eventId].push({ name, email });
+
+                localStorage.setItem('registrations', JSON.stringify(registrations));
+
+                alert('Registered successfully!');
+                renderStudentEvents();
+            }
+        }
+
+        /*  
+        ============================================================
+            ✅ FIXED QR GENERATION — now scannable on all devices
+        ============================================================
+        */
+        function generateQR(eventId) {
+            const event = events.find(e => e.id === eventId);
+            const qrDiv = document.getElementById(`qr-${eventId}`);
+            qrDiv.innerHTML = "";
+
+            // Clean & scannable QR text
+            const qrDataObj = {
+                id: event.id,
+                title: event.title,
+                date: event.date,
+                time: event.time
+            };
+
+            const qrData = JSON.stringify(qrDataObj);
+
+            new QRCode(qrDiv, {
+                text: qrData,
+                width: 150,
+                height: 150,
+                correctLevel: QRCode.CorrectLevel.H  
+            });
+        }
+
+        document.getElementById('apply-filters').addEventListener('click', renderStudentEvents);
+        document.getElementById('filter-category').addEventListener('change', renderStudentEvents);
+        document.getElementById('filter-status').addEventListener('change', renderStudentEvents);
+
+        renderStudentEvents();
+    </script>
+</body>
+</html>
+  -
